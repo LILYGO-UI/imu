@@ -1,0 +1,45 @@
+schema_version = 1
+
+[project]
+package = "lilygo-ui-imu"
+version = "0.1.0"
+app_id = "cc.lilygo.ui.Imu"
+title = "IMU"
+summary = "QMI8658 motion ball"
+description = "An acceleration and gyroscope driven ball for T-DisplayCM0, with live six-axis telemetry and calibration."
+license = "MIT"
+source_repo = "https://github.com/LILYGO-UI/template"
+homepage = "https://github.com/LILYGO-UI/template"
+categories = ["Development"]
+
+[[project.authors]]
+name = "lbuque"
+email = "110239031@qq.com"
+
+[project.assets]
+icon = "assets/app-icon.png"
+
+[[project.assets.screenshots]]
+path = "assets/previews/preview1.png"
+caption = "Main application screen"
+
+[[project.permissions]]
+id = "imu"
+reason = "Read onboard QMI8658 acceleration and angular velocity through Linux IIO"
+
+[project.compatibility]
+architectures = ["arm64"]
+min_appkit_version = "0.1.0"
+
+[project.launcher]
+order = 90
+
+[build]
+host_preset = "host-simulator"
+cross_preset = "cm0-cross"
+package_dir = "dist"
+
+[deploy]
+host = "raspberrypi.local"
+user = "pi"
+port = 22
