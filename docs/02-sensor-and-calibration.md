@@ -81,8 +81,9 @@ error is not printed on every retry.
 The view model independently rejects a connected snapshot that is more than
 250 ms old and stores `IMU sample timed out` in its snapshot error field.
 This message is not printed to standard error or displayed verbatim; the UI
-shows the same disconnected state as other input failures. This prevents movement
-based on stale measurements even if the worker has not yet reported a failure.
+shows `Offline` and `QMI8658: waiting for connection`, as with other input
+failures. This prevents movement based on stale measurements even if the worker
+has not yet reported a failure.
 The timeout itself does not restart the worker or change its retry interval.
 
 While disconnected, the ball retains its position, angle, and size. Ongoing
@@ -135,19 +136,27 @@ durations. Position continues following attitude during a pulse. The visible
 radius is capped to fit the arena, and the center is radially constrained using
 that enlarged radius so the entire ball stays inside the circle.
 
-## Calibration and Controls
+## Sensitivity and Internal Calibration
 
-| Control | Effect |
+The page exposes only the `Sensitivity` slider, from 25% to 200% with a default
+of 100%. It scales position response without changing telemetry units or pulse
+growth. Press ↑/→ to increase it by one percentage point or ↓/← to decrease
+it; Tab restores slider focus when needed. The page has no pause, reset, or
+calibration buttons.
+
+The Model and ViewModel retain the following commands for internal callers and
+unit tests; they are not page controls:
+
+| Command | Effect |
 | --- | --- |
 | Pause / resume | Freezes the displayed ball's position, angle, and size. Sampling, telemetry, attitude estimation, and the acceleration baseline continue updating. |
 | Reset | Immediately centers the ball, resets the marker angle, and restores normal size. Preserves calibration, sensitivity, and pause state. With live input and motion enabled, the ball moves back toward the current attitude's position. |
 | Calibrate | Centers the ball and restores normal size, then collects approximately one second of stable readings to save the neutral direction and gyro bias. Available only while connected. |
-| Sensitivity | Scales position response from 25% to 200%, with a default of 100%. Does not change telemetry units or the pulse-growth parameters. |
 
-To calibrate, place the board in the orientation that should mean centered and
-keep it still until calibration completes. A horizontal board is convenient,
-but any stable orientation can be the neutral position. Calibration also works
-while paused and preserves the pause state afterward.
+When an internal caller starts calibration, the sensor must remain still in the
+intended neutral orientation until collection completes. Any stable orientation
+can be the neutral position. Calibration also works while paused and preserves
+the pause state afterward.
 
 Calibration requires all of the following throughout the collection window:
 
@@ -173,10 +182,10 @@ persisted across application restarts.
 | `Cannot read IIO channel` or `Invalid scaled IIO sample` | Check the affected raw value and driver health. All six axes must be valid before a sample is accepted. |
 | Disconnected state despite no new IIO error in the log | The latest measurement may be over 250 ms old. Check IIO read latency and the device/driver. The view model stores `IMU sample timed out` internally and freezes the ball while waiting for fresh input. |
 | Hardware was expected but the status indicates simulation | Unset `LILYGO_IMU_DEMO` on Linux, or set it to `0` explicitly. A value of `1` overrides even an explicit device path. |
-| Ball remains offset while the board is level | Calibrate in the intended neutral orientation. Constant sensor bias and mounting orientation can otherwise produce a fixed offset. |
-| Calibration repeatedly returns to zero progress | Keep the board still; check the magnitude and stability conditions above. A disconnected or stale source cancels calibration. |
+| Ball remains offset while the board is level | Check the mounting orientation and sensor bias, which can produce a stable offset. Internal callers can calibrate a neutral orientation; the page does not expose calibration. |
+| Internal calibration repeatedly returns to zero progress | Check the magnitude and stability conditions above. A disconnected or stale source cancels calibration. |
 | Tilt direction is incorrect | Check AppKit display rotation, then set `LILYGO_IMU_ROTATION` for the PCB mounting orientation. Raw telemetry axes do not rotate. |
-| Ball stays enlarged while paused or disconnected | This is the retained display state. Resume with fresh samples to recover, or use Reset to restore normal size immediately. |
+| Ball stays enlarged while disconnected | This is the retained display state. Motion and size recovery continue when fresh samples return. |
 
 To inspect discovery names on the target board:
 

@@ -19,7 +19,7 @@ for development and testing. Sensor operation does not require internet access.
 </p>
 
 These previews use simulated input and do not represent hardware validation.
-The current interface uses Chinese labels.
+The interface uses English labels.
 
 ## Features
 
@@ -30,33 +30,34 @@ The current interface uses Chinese labels.
   times its normal size, subject to available space, then it smoothly recovers.
 - **Six-axis telemetry:** acceleration in `m/s^2` and angular velocity in `rad/s`,
   with a white ball marker responding to rotation around the sensor Z axis.
-- **Motion controls:** pause/resume, reset, one-second stationary calibration,
-  and sensitivity from 25% to 200%.
-- **Responsive layout:** portrait, landscape, and compact windows; short windows
-  prioritize the motion area and controls over telemetry.
+- **Sensitivity:** adjust the position response from 25% to 200%.
+- **Responsive layout:** acceleration on the left and angular velocity on the
+  right, with all six readings visible even at `320 x 240`. Portrait windows
+  place the readings above a full-width motion area; landscape windows place
+  them on either side of it.
 - **Hardware and demo sources:** background IIO sampling, automatic reconnection,
   stale-data detection, and an explicitly identified simulation mode.
 
 The ball visualizes attitude and transient acceleration; it does not measure
-physical displacement. Calibration is retained only for the current run.
-See [sensor and calibration details](docs/02-sensor-and-calibration.md).
+physical displacement. See
+[sensor and calibration details](docs/02-sensor-and-calibration.md) for the motion
+model and its internal calibration support.
 
 ## Controls
 
-The top buttons are pause/resume, reset, and calibrate, from left to right.
-Hover or long-press to show their names.
+The compact footer contains connection status and a sensitivity slider, from
+25% to 200% with a default of 100%. The page has no application title or
+pause/resume, reset, or calibration buttons, leaving more space for the ball.
+Use ↑ or → to increase sensitivity by one percentage point, and ↓ or ← to
+decrease it. Press Tab to restore slider focus if needed.
 
-| Control | Behavior |
-| --- | --- |
-| Pause/resume | Freeze the ball's position, size, and marker; sensor sampling and telemetry continue. Resume follows the current orientation. |
-| Reset | Center the ball and restore its normal size and marker angle. Calibration and sensitivity are kept; ongoing updates move it back to the position selected by the current tilt. |
-| Calibrate | Hold the board still in the desired neutral orientation for about one second. Movement restarts the accumulation. Saves the neutral direction and gyro bias for this run. Unavailable when disconnected. |
-| Sensitivity | Adjust the position response from 25% to 200%; default is 100%. |
+The readout panels are labeled `Acceleration` (`m/s²`) and `Angular rate`
+(`rad/s`), shortened to `Accel.` and `Gyro` below 480 px wide. The slider is
+labeled `Sensitivity`.
 
-The status shows `实时` (live), `模拟` (demo), `已暂停` (paused),
-`校准 N%` (calibrating), or `未连接` (disconnected). A disconnected sensor
-freezes the ball and shows unavailable axis readings. It never silently falls
-back to simulated readings.
+The status shows `Live`, `Demo`, or `Offline`. A disconnected sensor freezes the
+ball, shows unavailable axis readings and `QMI8658: waiting for connection`, and
+never silently falls back to simulated readings.
 
 ## Development Environment
 
@@ -197,12 +198,22 @@ lpm test
 | `imu-render-landscape` | Rendering and interactions at `1232 x 568` |
 | `imu-render-compact` | Rendering and interactions at `320 x 480` |
 | `imu-render-short` | Rendering and interactions at `320 x 240` |
+| `imu-runtime-portrait`, `imu-runtime-landscape` | Complete SDL runtime startup, keyboard focus housekeeping, continued updates, and clean shutdown |
+| `imu-keyboard-runtime-portrait`, `imu-keyboard-runtime-landscape` | SDL arrow-key sensitivity adjustment, pointer-to-keyboard handoff, focus recovery, and 25%–200% limits |
 
 Each render test writes `imu-<viewport>.ppm` and `imu-<viewport>-pulse.ppm`
 under `build/host-simulator`. These use synthetic sensor input. Inspect both
 normal and enlarged-ball images at all four sizes after UI changes; passing
 assertions do not replace visual review or device testing. See the
 [UI development guidelines](docs/01-user-interface.md).
+
+The runtime tests use SDL's dummy driver and demo sensor data. They exercise
+the AppKit runtime used by the executable, including the keyboard focus path
+that isolated view tests do not run. See the
+[startup crash diagnosis and validation](docs/03-startup-crash.md).
+The keyboard runtime tests in `tests/test_keyboard_runtime.cpp` inject SDL
+keyboard and pointer events through the complete application runtime in both
+orientations. The host suite contains ten tests.
 
 ### CM0 Device Build
 
@@ -309,8 +320,7 @@ calibration behavior, and diagnostic steps.
 | Homebrew libraries are not found | Configure with `cmake --preset host-simulator -DCMAKE_PREFIX_PATH="$(brew --prefix)"`. |
 | BSP download or compiler lookup fails | Check GitHub access, disk space, and that `aarch64-linux-gnu-gcc` and `aarch64-linux-gnu-g++` are on `PATH`. |
 | Status stays disconnected | Check the board overlay/driver, IIO device path and read permissions. Run in the foreground to see IIO diagnostics; see the [sensor guide](docs/02-sensor-and-calibration.md). |
-| Ball is off-center or moves in the wrong direction | Calibrate while still, then check display rotation and `LILYGO_IMU_ROTATION`. Reset alone does not change the neutral orientation. |
-| Calibration repeatedly restarts | Keep the board still for about one second. The animated demo source is not a stationary calibration reference. |
+| Ball is off-center or moves in the wrong direction | Check the board's orientation, display rotation, and `LILYGO_IMU_ROTATION`. A constant sensor bias can produce a stable offset; calibration remains an internal model capability without a page control. |
 
 ## Documentation
 

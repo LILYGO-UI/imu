@@ -55,8 +55,8 @@ void ImuViewModel::publish()
 
 std::string ImuViewModel::status() const
 {
-    if (!snapshot_.connected) return "未连接";
-    if (model_.calibrating()) return "校准 " + std::to_string(model_.calibration_progress()) + "%";
-    if (model_.paused()) return "已暂停";
-    return snapshot_.simulated ? "模拟" : "实时";
+    if (!snapshot_.connected) return "Offline";
+    if (model_.calibrating()) return "Calibrating " + std::to_string(model_.calibration_progress()) + "%";
+    if (model_.paused()) return "Paused";
+    return snapshot_.simulated ? "Demo" : "Live";
 }

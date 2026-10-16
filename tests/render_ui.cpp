@@ -82,6 +82,81 @@ void assert_inside_circle(lv_obj_t *ball, lv_obj_t *boundary)
     assert(std::hypot(dx, dy) + radius <= lv_area_get_width(&circle) * 0.5f + 1);
 }
 
+void assert_telemetry_layout(lv_obj_t *root)
+{
+    auto *surface      = lv_obj_find_by_name(root, "app_surface");
+    auto *arena        = lv_obj_find_by_name(root, "imu_arena");
+    auto *acceleration = lv_obj_find_by_name(root, "imu_acceleration");
+    auto *gyro         = lv_obj_find_by_name(root, "imu_angular_velocity");
+    assert(surface && arena && acceleration && gyro);
+    lv_area_t left{}, right{}, motion{};
+    lv_obj_get_coords(acceleration, &left);
+    lv_obj_get_coords(gyro, &right);
+    lv_obj_get_coords(arena, &motion);
+    assert(left.x2 < right.x1);
+    for (auto *panel : {acceleration, gyro}) {
+        assert(!lv_obj_has_flag(panel, LV_OBJ_FLAG_HIDDEN));
+        assert_inside(panel, surface);
+        lv_area_t area{};
+        lv_obj_get_coords(panel, &area);
+        assert(area.x2 < motion.x1 || area.x1 > motion.x2 || area.y2 < motion.y1 || area.y1 > motion.y2);
+    }
+    const char *names[] = {"imu_accel_x", "imu_accel_y", "imu_accel_z", "imu_gyro_x", "imu_gyro_y", "imu_gyro_z"};
+    for (int i = 0; i < 6; ++i) {
+        auto *value = lv_obj_find_by_name(root, names[i]);
+        assert(value && !lv_obj_has_flag(value, LV_OBJ_FLAG_HIDDEN));
+        assert_inside(value, i < 3 ? acceleration : gyro);
+        lv_point_t text_size{};
+        lv_text_get_size(&text_size, lv_label_get_text(value), lv_obj_get_style_text_font(value, LV_PART_MAIN),
+                         lv_obj_get_style_text_letter_space(value, LV_PART_MAIN),
+                         lv_obj_get_style_text_line_space(value, LV_PART_MAIN), LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        assert(text_size.x <= lv_obj_get_content_width(value));
+        assert(text_size.y <= lv_obj_get_content_height(value));
+    }
+}
+
+void assert_slider_touch(lv_obj_t *slider, ImuViewModel &view_model, lv_display_t *display)
+{
+    const auto initial = lv_slider_get_value(slider);
+    lv_area_t track{};
+    lv_obj_get_coords(slider, &track);
+    assert_inside(slider, lv_obj_get_parent(slider));
+    const int minimum = lv_slider_get_min_value(slider), maximum = lv_slider_get_max_value(slider);
+    const int knob_x = track.x1 + (initial - minimum) * lv_area_get_width(&track) / (maximum - minimum);
+    // Touch above the narrow track, then drag through both ends of its range.
+    // This exercises hit testing and pointer events rather than sending VALUE_CHANGED directly.
+    const int touch_y = (track.y1 + track.y2) / 2 - 22;
+    lv_indev_data_t sample{};
+    sample.state  = LV_INDEV_STATE_RELEASED;
+    auto *pointer = lv_indev_create();
+    assert(pointer);
+    lv_indev_set_type(pointer, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_display(pointer, display);
+    lv_indev_set_user_data(pointer, &sample);
+    lv_indev_set_read_cb(pointer, [](lv_indev_t *input, lv_indev_data_t *data) {
+        *data = *static_cast<lv_indev_data_t *>(lv_indev_get_user_data(input));
+    });
+    const auto send = [&](int x, lv_indev_state_t state) {
+        sample.point = {x, touch_y};
+        sample.state = state;
+        lv_indev_read(pointer);
+    };
+    lv_refr_now(display);
+    send(knob_x, LV_INDEV_STATE_PRESSED);
+    send(track.x2 + 1, LV_INDEV_STATE_PRESSED);
+    send(track.x2 + 1, LV_INDEV_STATE_RELEASED);
+    assert(view_model.model().sensitivity() == maximum);
+    lv_refr_now(display);
+    send(track.x2, LV_INDEV_STATE_PRESSED);
+    send(track.x1 - 1, LV_INDEV_STATE_PRESSED);
+    send(track.x1 - 1, LV_INDEV_STATE_RELEASED);
+    assert(view_model.model().sensitivity() == minimum);
+    lv_indev_delete(pointer);
+    lv_slider_set_value(slider, initial, LV_ANIM_OFF);
+    lv_obj_send_event(slider, LV_EVENT_VALUE_CHANGED, nullptr);
+    assert(view_model.model().sensitivity() == initial);
+}
+
 }  // namespace
 
 int main(int argc, char **argv)
@@ -112,57 +187,44 @@ int main(int argc, char **argv)
     auto view_model        = std::make_unique<ImuViewModel>(std::move(source));
     ImuView view(*view_model);
     auto *root = lv_screen_active();
-    view.create(root, "IMU");
+    view.create(root);
     lv_obj_update_layout(root);
     view_model->tick(0.016f);
 
-    auto *surface   = lv_obj_find_by_name(root, "app_surface");
-    auto *header    = lv_obj_find_by_name(root, "app_header");
-    auto *arena     = lv_obj_find_by_name(root, "imu_arena");
-    auto *ball      = lv_obj_find_by_name(root, "imu_ball");
-    auto *boundary  = lv_obj_find_by_name(root, "imu_boundary");
-    auto *marker    = lv_obj_find_by_name(root, "imu_ball_marker");
-    auto *pause     = lv_obj_find_by_name(root, "imu_pause");
-    auto *reset     = lv_obj_find_by_name(root, "imu_reset");
-    auto *calibrate = lv_obj_find_by_name(root, "imu_calibrate");
-    auto *slider    = lv_obj_find_by_name(root, "imu_sensitivity");
-    assert(surface && header && arena && ball && boundary && marker && pause && reset && calibrate && slider);
+    auto *surface  = lv_obj_find_by_name(root, "app_surface");
+    auto *arena    = lv_obj_find_by_name(root, "imu_arena");
+    auto *ball     = lv_obj_find_by_name(root, "imu_ball");
+    auto *boundary = lv_obj_find_by_name(root, "imu_boundary");
+    auto *marker   = lv_obj_find_by_name(root, "imu_ball_marker");
+    auto *slider   = lv_obj_find_by_name(root, "imu_sensitivity");
+    assert(surface && arena && ball && boundary && marker && slider);
+    for (const char *name : {"app_header", "app_title", "imu_pause", "imu_reset", "imu_calibrate"})
+        assert(!lv_obj_find_by_name(root, name));
     assert(lv_color_eq(lv_obj_get_style_bg_color(surface, LV_PART_MAIN), lv_color_hex(kColorPageBackground)));
     assert(lv_obj_get_style_bg_opa(surface, LV_PART_MAIN) == LV_OPA_COVER);
     assert(lv_obj_get_style_bg_grad_dir(surface, LV_PART_MAIN) == LV_GRAD_DIR_NONE);
-    assert_inside(pause, header);
-    assert_inside(reset, header);
-    assert_inside(calibrate, header);
     assert_inside(arena, surface);
     assert_inside(ball, arena);
     const auto initial_x = view_model->model().ball().x;
     input->value.sample  = {{-3, 1, 9.27f}, {0, 0, 0.3f}};
     for (int i = 0; i < 50; ++i) view_model->tick(0.016f);
     assert(view_model->model().ball().x < initial_x - 5);
-    lv_obj_send_event(pause, LV_EVENT_CLICKED, nullptr);
-    assert(view_model->model().paused());
-    const auto paused = view_model->model().ball();
-    view_model->tick(0.016f);
-    assert(view_model->model().ball().x == paused.x);
-    lv_obj_send_event(reset, LV_EVENT_CLICKED, nullptr);
-    assert(std::abs(view_model->model().ball().x - initial_x) < 1);
     lv_slider_set_value(slider, 150, LV_ANIM_OFF);
     lv_obj_send_event(slider, LV_EVENT_VALUE_CHANGED, nullptr);
     assert(view_model->model().sensitivity() == 150);
-    lv_obj_send_event(pause, LV_EVENT_CLICKED, nullptr);
-    input->value.sample = {{0, 0, 9.80665f}, {0, 0, 0}};
-    lv_obj_send_event(calibrate, LV_EVENT_CLICKED, nullptr);
-    for (int i = 0; i < 70; ++i) view_model->tick(0.016f);
-    assert(!view_model->model().calibrating());
     input->value.connected = false;
     view_model->tick(0.016f);
-    assert(lv_obj_has_state(calibrate, LV_STATE_DISABLED));
     assert(!lv_obj_has_flag(lv_obj_find_by_name(root, "imu_error"), LV_OBJ_FLAG_HIDDEN));
+    assert(std::string(lv_label_get_text(lv_obj_find_by_name(root, "imu_status"))) == "Offline");
+    assert(std::string(lv_label_get_text(lv_obj_find_by_name(root, "imu_accel_x"))) == "X --");
     input->value.connected = true;
     input->value.sample    = {{-2.1f, -0.8f, 9.54f}, {0.04f, -0.12f, 0.35f}};
     for (int i = 0; i < 40; ++i) view_model->tick(0.016f);
     assert(std::string(lv_label_get_text(lv_obj_find_by_name(root, "imu_accel_x"))) == "X -2.10");
     assert(std::string(lv_label_get_text(lv_obj_find_by_name(root, "imu_gyro_z"))) == "Z +0.35");
+    assert(lv_obj_has_flag(lv_obj_find_by_name(root, "imu_error"), LV_OBJ_FLAG_HIDDEN));
+    lv_obj_update_layout(root);
+    assert_telemetry_layout(root);
 
     lv_tick_inc(20);
     lv_refr_now(display);
@@ -207,9 +269,11 @@ int main(int argc, char **argv)
     assert_inside_circle(ball, boundary);
     lv_slider_set_value(slider, 150, LV_ANIM_OFF);
     lv_obj_send_event(slider, LV_EVENT_VALUE_CHANGED, nullptr);
-    lv_obj_send_event(pause, LV_EVENT_CLICKED, nullptr);
+    assert_slider_touch(slider, *view_model, display);
+    view_model->toggle_pause();
     lv_obj_set_size(surface, height, width);
     lv_obj_update_layout(root);
+    assert_telemetry_layout(root);
     assert(view_model->model().paused() && view_model->model().sensitivity() == 150);
     const float arena_width  = static_cast<float>(lv_obj_get_content_width(arena));
     const float arena_height = static_cast<float>(lv_obj_get_content_height(arena));

@@ -113,6 +113,28 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
             ${_width} ${_height}
             ${CMAKE_CURRENT_BINARY_DIR}/imu-${viewport}.ppm)
     endforeach()
+
+    if(CM0_SIMULATOR)
+        find_package(Python3 REQUIRED COMPONENTS Interpreter)
+        add_executable(imu-keyboard-runtime-tests tests/test_keyboard_runtime.cpp)
+        target_compile_options(imu-keyboard-runtime-tests PRIVATE
+            -Wall -Wextra -Wpedantic -UNDEBUG)
+        target_link_libraries(imu-keyboard-runtime-tests PRIVATE
+            lilygo_ui_imu_ui)
+        foreach(orientation IN ITEMS portrait landscape)
+            add_test(NAME imu-runtime-${orientation}
+                COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_runtime_startup.py
+                    $<TARGET_FILE:lilygo_ui_imu> ${orientation})
+            set_tests_properties(imu-runtime-${orientation} PROPERTIES TIMEOUT 15)
+            add_test(NAME imu-keyboard-runtime-${orientation}
+                COMMAND imu-keyboard-runtime-tests
+                    --width 568 --height 1232 --orientation ${orientation})
+            set_tests_properties(imu-keyboard-runtime-${orientation} PROPERTIES
+                TIMEOUT 15
+                ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;SDL_RENDER_DRIVER=software;LILYGO_IMU_DEMO=1")
+        endforeach()
+    endif()
 endif()
 
 # New applications have no legacy CM0 package to replace. Add Debian migration
